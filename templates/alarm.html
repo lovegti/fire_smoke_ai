@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>报警记录 - 智慧消防安全监测系统</title>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
+        body {background:#f0f2f5}
+        .navbar {background:#b71c1c;height:60px;display:flex;align-items:center;padding:0 40px}
+        .navbar-logo {color:#fff;font-size:24px;font-weight:bold;margin-right:50px}
+        .navbar-item {color:#fff;font-size:16px;margin:0 20px;text-decoration:none}
+        .navbar-item:hover {color:#ffcdd2}
+        .container {width:92%;margin:30px auto}
+        .card {background:#fff;border-radius:8px;box-shadow:0 2px 10px #00000015;padding:20px}
+        .card-title {font-size:18px;font-weight:bold;margin-bottom:15px;border-left:4px solid #b71c1c;padding-left:10px}
+        table {width:100%;border-collapse:collapse}
+        th,td {border:1px solid #ddd;padding:12px;text-align:left}
+        th {background:#f5f5f5}
+        .danger {color:#b71c1c;font-weight:bold}
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-logo">智慧消防安全监测系统</div>
+        <a class="navbar-item" href="/">实时监控</a>
+        <a class="navbar-item" href="/data">环境数据</a>
+        <a class="navbar-item" href="/alarm">报警记录</a>
+        <a class="navbar-item" href="/analysis">数据分析</a>
+        <a class="navbar-item" href="/manage">系统管理</a>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-title">历史报警记录</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>报警时间</th>
+                        <th>报警类型</th>
+                    </tr>
+                </thead>
+                <tbody id="alarmTable"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        setInterval(()=>{
+            fetch("/api/alarm_log")
+            .then(res=>res.json())
+            .then(data=>{
+                let html = "";
+                data.forEach(item=>{
+                    html += `<tr>
+                        <td class="danger">${item[0]}</td>
+                        <td class="danger">${item[1]}</td>
+                    </tr>`
+                })
+                document.getElementById("alarmTable").innerHTML = html;
+            })
+        },2000)
+    </script>
+</body>
+</html>

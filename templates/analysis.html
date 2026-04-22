@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>数据分析 - 智慧消防安全监测系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
+        body {background:#f0f0f0}
+        .navbar {background:#b71c1c;height:60px;display:flex;align-items:center;padding:0 40px;color:#fff}
+        .navbar a {color:#fff;margin:0 15px;text-decoration:none}
+        .container {width:92%;margin:30px auto}
+        .card {background:#fff;border-radius:8px;box-shadow:0 2px 10px #00000010;padding:20px;margin-bottom:20px}
+        .card-title {font-size:18px;font-weight:bold;margin-bottom:15px;border-left:4px solid #b71c1c;padding-left:10px}
+        .filter {display:flex;gap:15px;align-items:center;margin-bottom:15px;flex-wrap:wrap}
+        .filter input {padding:8px;border:1px solid #ddd;border-radius:4px}
+        .btn {background:#b71c1c;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer}
+        table {width:100%;border-collapse:collapse;margin-top:15px}
+        th,td {border:1px solid #ddd;padding:10px;text-align:left}
+        th {background:#f5f5f5}
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .chart-box {
+            position:relative;
+            height:280px;
+            background:#fff;
+            padding:10px;
+            border-radius:8px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body>
+
+<div class="navbar">
+    <div class="navbar-logo">智慧消防安全监测系统</div>
+    <a href="/">实时监控</a>
+    <a href="/data">环境数据</a>
+    <a href="/alarm">报警记录</a>
+    <a href="/analysis">数据分析</a>
+    <a href="/manage">系统管理</a>
+</div>
+
+<div class="container">
+    <div class="card">
+        <div class="card-title">实时数据趋势（10秒自动刷新）</div>
+        <div class="chart-row">
+            <div class="chart-box"><canvas id="chartTemp"></canvas></div>
+            <div class="chart-box"><canvas id="chartSmoke"></canvas></div>
+            <div class="chart-box"><canvas id="chartCo"></canvas></div>
+            <div class="chart-box"><canvas id="chartRisk"></canvas></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">火灾风险次数统计</div>
+        <div class="filter">
+            <span>开始时间：</span><input type="datetime-local" id="startTime">
+            <span>结束时间：</span><input type="datetime-local" id="endTime">
+            <span>风险 >：</span><input type="number" id="riskLimit" value="50" style="width:80px">
+            <button class="btn" onclick="loadStat()">统计</button>
+            <button class="btn" onclick="exportData()">导出</button>
+        </div>
+        <div class="chart-box" style="height:350px"><canvas id="barChart"></canvas></div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>时间</th><th>温度</th><th>烟雾</th><th>CO</th><th>火灾风险(%)</th>
+                </tr>
+            </thead>
+            <tbody id="dataTable"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    let chartTemp, chartSmoke, chartCo, chartRisk;
+    let barChart = null;
+
+    // ====================== 核心设置 ======================
+    const MAX_DATA_COUNT = 50;   // X轴显示50条数据（更多更饱满）
+    const REFRESH_SECOND = 10;   // 10秒刷新一次（你要的速度）
+
+    // 图表统一美观配置
+    function getChartOptions(titleText) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 1200 },
+            plugins: {
+                legend: { display: true },
+                title: { display: true, text: titleText, font: { size:15, weight:'bold' } }
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: { grid: { color: '#f0f0f0' } }
+            },
+            elements: { line: { tension: 0.4 }, point: { radius: 1.5 } }
+        };
+    }
+
+    // 初始化4个图
+    function initCharts() {
+        chartTemp = new Chart(document.getElementById('chartTemp').getContext('2d'), {
+            type:'line', data:{ labels:[], datasets:[{label:'温度(℃)',borderColor:'#ff4444',data:[]}] },
+            options: getChartOptions('实时温度')
+        });
+        chartSmoke = new Chart(document.getElementById('chartSmoke').getContext('2d'), {
+            type:'line', data:{ labels:[], datasets:[{label:'烟雾浓度',borderColor:'#ff8800',data:[]}] },
+            options: getChartOptions('实时烟雾浓度')
+        });
+        chartCo = new Chart(document.getElementById('chartCo').getContext('2d'), {
+            type:'line', data:{ labels:[], datasets:[{label:'CO(ppm)',borderColor:'#9933cc',data:[]}] },
+            options: getChartOptions('实时一氧化碳')
+        });
+        chartRisk = new Chart(document.getElementById('chartRisk').getContext('2d'), {
+            type:'line', data:{ labels:[], datasets:[{label:'火灾风险(%)',borderColor:'#cc0000',data:[]}] },
+            options: getChartOptions('实时火灾风险')
+        });
+    }
+
+    // ====================== 10秒刷新一次，显示大量数据 ======================
+    function updateRealTime() {
+        fetch("/api/analysis_data")
+        .then(res => res.json())
+        .then(data => {
+            if(!data || data.length===0) return;
+
+            let labels = data.map(i => i[0].substring(11,19));
+            let temp   = data.map(i => i[1]);
+            let smoke  = data.map(i => i[2]);
+            let co     = data.map(i => i[3]);
+            let risk   = data.map(i => i[4]);
+
+            // 显示最多50条数据（X轴饱满）
+            if(labels.length > MAX_DATA_COUNT){
+                labels = labels.slice(-MAX_DATA_COUNT);
+                temp   = temp.slice(-MAX_DATA_COUNT);
+                smoke  = smoke.slice(-MAX_DATA_COUNT);
+                co     = co.slice(-MAX_DATA_COUNT);
+                risk   = risk.slice(-MAX_DATA_COUNT);
+            }
+
+            chartTemp.data.labels = labels;
+            chartSmoke.data.labels = labels;
+            chartCo.data.labels = labels;
+            chartRisk.data.labels = labels;
+
+            chartTemp.data.datasets[0].data = temp;
+            chartSmoke.data.datasets[0].data = smoke;
+            chartCo.data.datasets[0].data = co;
+            chartRisk.data.datasets[0].data = risk;
+
+            chartTemp.update();
+            chartSmoke.update();
+            chartCo.update();
+            chartRisk.update();
+        });
+    }
+
+    // 统计柱状图
+    function loadStat() {
+        let start = document.getElementById("startTime").value.replace("T"," ");
+        let end = document.getElementById("endTime").value.replace("T"," ");
+        let riskLimit = parseInt(document.getElementById("riskLimit").value)||0;
+
+        fetch(`/api/analysis_data?start=${start}&end=${end}`)
+        .then(res=>res.json())
+        .then(data=>{
+            let filtered = data.filter(i=>i[4]>riskLimit);
+            let count = {};
+            filtered.forEach(i=>{
+                let d = i[0].substring(0,10);
+                count[d]=(count[d]||0)+1;
+            });
+
+            if(barChart)barChart.destroy();
+            barChart = new Chart(document.getElementById("barChart").getContext('2d'),{
+                type:'bar',
+                data:{ labels:Object.keys(count), datasets:[{label:`风险>${riskLimit}% 次数`,data:Object.values(count),backgroundColor:'#b71c1c'}] },
+                options:{responsive:true,maintainAspectRatio:false}
+            });
+
+            let html="";
+            filtered.forEach(i=>{
+                html+=`<tr><td>${i[0]}</td><td>${i[1]}</td><td>${i[2]}</td><td>${i[3]}</td><td>${i[4]}</td></tr>`;
+            });
+            document.getElementById("dataTable").innerHTML=html;
+        });
+    }
+
+    function exportData(){
+        let s = document.getElementById("startTime").value.replace("T"," ");
+        let e = document.getElementById("endTime").value.replace("T"," ");
+        location.href=`/export_data?start=${s}&end=${e}`;
+    }
+
+    // 启动
+    initCharts();
+    updateRealTime();
+    loadStat();
+
+    // ====================== 10秒刷新一次 ======================
+    setInterval(updateRealTime, REFRESH_SECOND * 1000);
+</script>
+
+</body>
+</html>

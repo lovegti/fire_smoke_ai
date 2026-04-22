@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>实时监控 - 智慧消防系统</title>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:微软雅黑}
+        body {background:#f0f2f5}
+        .navbar {background:#d32f2f;color:white;padding:16px 30px;display:flex;gap:24px}
+        .navbar a {color:white;text-decoration:none}
+        .container {max-width:1400px;margin:20px auto;padding:20px;display:grid;grid-template-columns:7fr 3fr;gap:20px}
+        .card {background:white;border-radius:8px;box-shadow:0 2px 8px #00000010;padding:20px}
+        .card h3 {margin-bottom:15px;border-left:4px solid #d32f2f;padding-left:10px}
+        .video {width:100%;border-radius:8px;margin-top:10px}
+        .data-line {padding:10px 0;border-bottom:1px solid #eee;display:flex;justify-content:space-between}
+        .danger {color:#d32f2f;font-weight:bold}
+        .safe {color:#2e7d32;font-weight:bold}
+        .input-bar {display:flex;gap:10px;margin:10px 0}
+        .input-bar input {flex:1;padding:8px;border:1px solid #ddd;border-radius:6px}
+        .input-bar button {background:#d32f2f;color:white;border:none;padding:8px 16px;border-radius:6px}
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h3>智慧消防监测系统</h3>
+        <a href="/">实时监控</a>
+        <a href="/data">环境数据</a>
+        <a href="/alarm">报警记录</a>
+        <a href="/analysis">数据分析</a>
+        <a href="/manage">系统管理</a>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h3>🎥 实时视频监控</h3>
+            <div class="input-bar">
+                <input type="text" id="videoUrl" placeholder="输入视频流地址 例如：http://192.168.1.105:8080/video">
+                <button onclick="setVideoUrl()">连接</button>
+            </div>
+            <img src="/video_feed" class="video">
+        </div>
+
+        <div>
+            <div class="card" style="margin-bottom:20px">
+                <h3>📊 实时环境数据</h3>
+                <div class="data-line">温度：<span id="temp">-</span></div>
+                <div class="data-line">烟雾浓度：<span id="smoke">-</span></div>
+                <div class="data-line">一氧化碳：<span id="co">-</span></div>
+                <div class="data-line">火灾风险：<span id="risk" class="safe">-</span></div>
+            </div>
+
+            <div class="card" style="margin-bottom:20px">
+                <h3>⚠️ 设备状态</h3>
+                <div class="data-line">状态：<span id="status" class="safe">正常</span></div>
+            </div>
+
+            <div class="card">
+                <h3>🚨 最新报警</h3>
+                <div id="alarmList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function setVideoUrl(){
+            let url = document.getElementById("videoUrl").value;
+            fetch("/set_video_url", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({url: url})
+            });
+        }
+
+        setInterval(()=>{
+            fetch("/api/data").then(res=>res.json()).then(d=>{
+                document.getElementById("temp").innerText = d.sensor.temp + "℃";
+                document.getElementById("smoke").innerText = d.sensor.smoke;
+                document.getElementById("co").innerText = d.sensor.co + "ppm";
+                document.getElementById("risk").innerText = d.sensor.fire_risk + "%";
+                document.getElementById("risk").className = d.sensor.fire_risk > 50 ? "danger" : "safe";
+                document.getElementById("status").innerText = d.fire_detected ? "检测到烟火" : "正常";
+                document.getElementById("status").className = d.fire_detected ? "danger" : "safe";
+                let html = "";
+                d.alarm_list.forEach(item=>{
+                    html += `<div class="danger" style="padding:6px 0">${item.time} ${item.type}</div>`
+                })
+                document.getElementById("alarmList").innerHTML = html;
+            })
+        },1000);
+    </script>
+</body>
+</html>
